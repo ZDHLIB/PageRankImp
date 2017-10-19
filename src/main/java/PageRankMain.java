@@ -1,5 +1,3 @@
-import jdk.nashorn.internal.ir.Terminal;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -15,19 +13,31 @@ public class PageRankMain {
     // The max iteration rounds to terminate the algorithm, it will be changed
     // in initPageRank() function as it should be depends on the scale of the graph
     private static int ITERATION = 100;
-    private final static BigDecimal alpha = BigDecimal.valueOf(0.85);
-    private static BigDecimal epsilon;
+    private static BigDecimal alpha = BigDecimal.valueOf(0.85);
+    private static BigDecimal beta = BigDecimal.valueOf(0.15);
+    private static BigDecimal epsilon;  //error range
 
+    /**
+     * Initial nodes values of graph size, iteration times, error range, nodes' outdegree, and RP default PR
+     */
     public void initPageRank(){
         N = graph.size();
         ITERATION *= N;
-        epsilon = new BigDecimal(1).divide(BigDecimal.valueOf(10 * N),3, BigDecimal.ROUND_HALF_UP);
+        epsilon = new BigDecimal(1).divide(BigDecimal.valueOf(1000000 * N),6, BigDecimal.ROUND_HALF_UP);
         for(Map.Entry entity : graph.entrySet()){
             Node node = (Node) entity.getValue();
-            node.setPR(node.getPR().divide(BigDecimal.valueOf(N), 3, BigDecimal.ROUND_HALF_UP));
+            node.setPR(BigDecimal.valueOf(1).divide(BigDecimal.valueOf(N), 6, BigDecimal.ROUND_HALF_UP));
+            if(node.getOutDegree().intValue() == 0){
+                node.setOutDegree(BigDecimal.valueOf(1));
+            }
         }
     }
 
+    /**
+     * Calculate PageRank values.
+     * Xi = alpha * SUM(Xj / outdegree of j) + beta
+     * Termination: |Xi - Xi-1| <= epsilon or iteration times up to maximum
+     */
     public void calPageRankValue(){
         int round = 0;
         boolean checkTerminate;
@@ -37,37 +47,35 @@ public class PageRankMain {
                 BigDecimal inNodePR = BigDecimal.valueOf(0);
                 Node node = (Node) entity.getValue();
                 ArrayList<String> inNeighbours = node.getInNeighbours();
+
                 for(String nodeName:inNeighbours){
                     Node inNode = graph.get(nodeName);
-                    inNodePR.add(inNode.getPR().divide(inNode.getOutDegree(), 3, BigDecimal.ROUND_HALF_UP));
+                    inNodePR = inNodePR.add(inNode.getPR().divide(inNode.getOutDegree(), 6, BigDecimal.ROUND_HALF_UP));
                 }
-                BigDecimal newPR = inNodePR.multiply(alpha).add(
-                        (BigDecimal.valueOf(1).subtract(alpha))
-                        .divide(BigDecimal.valueOf(N), 3, BigDecimal.ROUND_HALF_UP));
+                BigDecimal newPR = inNodePR.multiply(alpha).add(beta);
 
-                if( node.getPR().subtract(newPR).compareTo(epsilon) > 0 ){
+                // Check error range
+                if( node.getPR().subtract(newPR).abs().compareTo(epsilon) > 0 ){
                     checkTerminate = false;
                 }
+
+                //update new PR value
                 node.setPR(newPR);
             }
+            round++;
         }while(!checkTerminate && round < ITERATION);
         //If the changes of all nodes' PR smaller than epsilon or iteration time up to maximum, then terminate.
     }
 
-    private static boolean checkTermination(){
-        for(Map.Entry entity : graph.entrySet()){
-            Node node = (Node) entity.getValue();
-            if(node.getEpsilon().compareTo(epsilon) > 0){
-                return false;
-            }
-        }
-        return true;
-    }
 
+    /**
+     * Construction a graph<Node Name, Node info>
+     * @param rawData
+     */
     public void constructGraph(ArrayList<String> rawData){
         for(String line : rawData){
-            Node node1 = null;
-            Node node2 = null;
+            Node node1;
+            Node node2;
             String[] nodes = line.replaceAll("[ |\t]+"," ").split(" ");
             String vx = nodes[0];
             String vy = nodes[1];
@@ -109,34 +117,24 @@ public class PageRankMain {
     }
 
     private class Node{
-        private String id;
-        private ArrayList<String> inNeighbours;
-        private BigDecimal outDegree;
+        private String id;  //Node name
+        private ArrayList<String> inNeighbours;  //The nodes direct to it
+        private BigDecimal outDegree;  // The number of out-links .
         private BigDecimal PR;
-        private BigDecimal epsilon;
 
         public Node(String id){
-            this.PR = new BigDecimal(0).setScale(3, BigDecimal.ROUND_HALF_UP);
+            this.PR = new BigDecimal(0).setScale(6, BigDecimal.ROUND_HALF_UP);
             this.inNeighbours = new ArrayList<String>();
             this.id = id;
-            this.outDegree = BigDecimal.valueOf(1);
-            this.epsilon = BigDecimal.valueOf(0.01);
+            this.outDegree = BigDecimal.valueOf(0);
         }
 
         public String getId() {
             return id;
         }
 
-        public void setId(String id) {
-            this.id = id;
-        }
-
         public ArrayList<String> getInNeighbours() {
             return inNeighbours;
-        }
-
-        public void setInNeighbours(ArrayList<String> inNeighbours) {
-            this.inNeighbours = inNeighbours;
         }
 
         public BigDecimal getPR() {
@@ -154,26 +152,29 @@ public class PageRankMain {
         public void setOutDegree(BigDecimal outDegree) {
             this.outDegree = outDegree;
         }
-
-        public BigDecimal getEpsilon() {
-            return epsilon;
-        }
-
-        public void setEpsilon(BigDecimal epsilon) {
-            this.epsilon = epsilon;
-        }
     }
 
     public static void main(String [] arg) {
-        if (arg.length < 1) {
-            System.out.println("Please input the file path of graph data.");
+        if (arg.length < 3) {
+            System.out.println("Please input the file path of graph data, alpha value and beta value.");
             return;
         }
         String filePath = arg[0];
+        alpha = BigDecimal.valueOf(Double.valueOf(arg[1]));
+        beta = BigDecimal.valueOf(Double.valueOf(arg[2]));
 
+        //Read data from file
+        ArrayList<String> rawData = readData(filePath);
+
+        PageRankMain pageRankMain = new PageRankMain();
+        pageRankMain.constructGraph(rawData);  //construct a graph based on rawdata
+        pageRankMain.initPageRank();  //initial the nodes' data
+        pageRankMain.calPageRankValue();  // calculate the RP values of nodes
+
+        //Print out the result
         for(Map.Entry entity : graph.entrySet()) {
             Node node = (Node) entity.getValue();
-            System.out.println(node.getId() + " " + node.getPR());
+            System.out.println("[" + node.getId() + "]\t" + node.getPR());
         }
     }
 }
